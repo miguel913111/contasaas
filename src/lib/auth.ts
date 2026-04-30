@@ -37,26 +37,20 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email e password sao obrigatorios');
+          return null;
         }
 
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
         });
 
-        if (!user) {
-          throw new Error('Utilizador nao encontrado');
+        if (!user || !user.passwordHash) {
+          return null;
         }
 
-        // Verifica password (se existir hash)
-        if (user.passwordHash) {
-          const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
-          if (!isValid) {
-            throw new Error('Password incorreta');
-          }
-        } else {
-          // Sem password hash = apenas OAuth, nao permite login por credenciais
-          throw new Error('Utilizador registado apenas via OAuth. Use o login Google.');
+        const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+        if (!isValid) {
+          return null;
         }
 
         return {
@@ -65,7 +59,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           image: user.image,
           role: user.role,
-        };
+        } as any;
       },
     }),
   ],
