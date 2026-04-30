@@ -421,3 +421,70 @@ export async function checkDuplicateSignature(
     existingId: existing?.id,
   };
 }
+
+
+// ============================================================
+// EXTRACAO DE TEXTO LIVRE (para RAG chat com documentos)
+// ============================================================
+
+/**
+ * Extrai texto puro de uma imagem ou PDF para uso no RAG chat.
+ * Usa Gemini Vision como fallback universal.
+ */
+export async function extractTextFromImage(
+  filePath: string,
+  mimeType: string
+): Promise<string> {
+  const fs = await import('fs');
+  const startTime = Date.now();
+
+  try {
+    // Para PDFs, tentamos pdf-parse primeiro
+    if (mimeType === 'application/pdf') {
+      try {
+        const buffer = fs.readFileSync(filePath);
+        const pdfData = await pdfParse(buffer);
+        if (pdfData.text && pdfData.text.trim().length > 50) {
+          console.log(`[OCR/RAG] PDF texto extraido via pdf-parse: ${pdfData.text.length} chars`);
+          return pdfData.text.trim().substring(0, 8000);
+        }
+      } catch {
+        // Falha no pdf-parse, segue para Gemini
+      }
+    }
+
+    // Para imagens e PDFs que falharam no pdf-parse, usa Gemini Vision
+    const buffer = fs.readFileSync(filePath);
+    const base64Data = buffer.toString('base64');
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: 'Extraia TODO o texto visivel deste documento. Preserve a estrutura (titulos, listas, tabelas). Nao adicione comentarios, apenas o texto puro.',
+            },
+            {
+              inlineData: {
+                mimeType: mimeType === 'application/pdf' ? 'image/jpeg' : mimeType,
+                data: base64Data,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const response = await result.response;
+    const text = response.text();
+
+    console.log(`[OCR/RAG] Texto extraido via Gemini: ${text.length} chars em ${Date.now() - startTime}ms`);
+    return text.trim().substring(0, 8000);
+
+  } catch (error) {
+    console.error('[OCR/RAG] Erro ao extrair texto:', error);
+    return '[Erro ao processar documento. Tente novamente ou faca a pergunta apenas por texto.]';
+  }
+}
