@@ -5,11 +5,17 @@
  * - ACCOUNTANT: Gerencia multiplos clientes
  * - SELF_SERVICE: Um cliente (ENI)
  * - ADMIN: Acesso total
+ * 
+ * Providers:
+ * - Google OAuth (producao)
+ * - Credentials (localhost/dev apenas)
  */
 
 import { NextAuthOptions } from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
 import { prisma } from './prisma';
 import { UserRole } from '@/types';
 
@@ -18,15 +24,56 @@ export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      clientSecret: process.env.GOGLE_CLIENT_SECRET || '',
       allowDangerousEmailAccountLinking: true,
+    }),
+    // Login local com email/password (apenas para desenvolvimento)
+    CredentialsProvider({
+      id: 'credentials',
+      name: 'Email / Password',
+      credentials: {
+        email: { label: 'Email', type: 'email', placeholder: 'email@exemplo.pt' },
+        password: { label: 'Password', type: 'password', placeholder: '********' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error('Email e password sao obrigatorios');
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+        });
+
+        if (!user) {
+          throw new Error('Utilizador nao encontrado');
+        }
+
+        // Verifica password (se existir hash)
+        if (user.passwordHash) {
+          const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+          if (!isValid) {
+            throw new Error('Password incorreta');
+          }
+        } else {
+          // Sem password hash = apenas OAuth, nao permite login por credenciais
+          throw new Error('Utilizador registado apenas via OAuth. Use o login Google.');
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          role: user.role,
+        };
+      },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
+        token.role = (user as any).role;
       }
       return token;
     },
@@ -38,15 +85,13 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async signIn({ user, account, profile }) {
-      // Primeiro login: define role default
+      // Primeiro login via Google: define role default
       if (account?.provider === 'google') {
         const existingUser = await prisma.user.findUnique({
           where: { email: user.email! },
         });
 
         if (!existingUser) {
-          // Novo utilizador: default SELF_SERVICE
-          // Pode ser alterado manualmente na DB ou via onboarding
           await prisma.user.create({
             data: {
               email: user.email!,
@@ -103,12 +148,6 @@ export function canAccessCompany(
 // HELPERS DE COMPANY
 // ============================================================
 
-/**
- * Obtem o companyId do utilizador logado.
- * - ENI (SELF_SERVICE): retorna a empresa onde é owner
- * - ACCOUNTANT: retorna a PRIMEIRA empresa onde é accountant (para fluxos single-company)
- * - Retorna null se nao encontrar empresa
- */
 export async function getCurrentCompanyId(
   userId: string,
   role: UserRole
@@ -132,9 +171,6 @@ export async function getCurrentCompanyId(
   return null;
 }
 
-/**
- * Lista todas as empresas acessiveis pelo utilizador
- */
 export async function getAccessibleCompanies(
   userId: string,
   role: UserRole

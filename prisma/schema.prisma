@@ -76,6 +76,7 @@ model User {
   image         String?
   role          UserRole  @default(SELF_SERVICE)
   emailVerified DateTime?
+  passwordHash  String?   // Para login com Credentials (dev only)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

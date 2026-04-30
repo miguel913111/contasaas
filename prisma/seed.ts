@@ -8,8 +8,14 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+
+const TEST_PASSWORD = 'teste123';
+async function hashPassword(password: string) {
+  return bcrypt.hash(password, 12);
+}
 
 async function main() {
   console.log('Iniciando seed...\n');
@@ -17,11 +23,12 @@ async function main() {
   // Cria contabilista de teste
   const accountant = await prisma.user.upsert({
     where: { email: 'contabilista@teste.pt' },
-    update: {},
+    update: { passwordHash: await hashPassword(TEST_PASSWORD) },
     create: {
       email: 'contabilista@teste.pt',
       name: 'Ana Silva (Contabilista)',
       role: 'ACCOUNTANT',
+      passwordHash: await hashPassword(TEST_PASSWORD),
     },
   });
   console.log('Contabilista criada:', accountant.email);
@@ -29,11 +36,12 @@ async function main() {
   // Cria ENI de teste
   const eni = await prisma.user.upsert({
     where: { email: 'eni@teste.pt' },
-    update: {},
+    update: { passwordHash: await hashPassword(TEST_PASSWORD) },
     create: {
       email: 'eni@teste.pt',
       name: 'Jose Ferreira (ENI)',
       role: 'SELF_SERVICE',
+      passwordHash: await hashPassword(TEST_PASSWORD),
     },
   });
   console.log('ENI criado:', eni.email);
