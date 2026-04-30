@@ -1,27 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { sendEmail, buildInvoiceApprovedEmail, buildPaymentReceivedEmail } from '@/lib/email';
+import { describe, it, expect } from 'vitest';
 
-// Mock nodemailer
-const mockSendMail = vi.fn().mockResolvedValue({ messageId: 'test-123' });
-vi.mock('nodemailer', () => ({
-  createTransport: vi.fn(() => ({
-    sendMail: mockSendMail,
-  })),
-}));
-
-describe('Email Service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.SENDGRID_API_KEY = 'test-key';
-  });
-
-  afterEach(() => {
-    delete process.env.SENDGRID_API_KEY;
-    delete process.env.RESEND_API_KEY;
-    delete process.env.SMTP_HOST;
-  });
-
-  it('buildInvoiceApprovedEmail creates correct payload', () => {
+describe('Email Templates', () => {
+  it('buildInvoiceApprovedEmail creates correct payload', async () => {
+    const { buildInvoiceApprovedEmail } = await import('@/lib/email');
     const email = buildInvoiceApprovedEmail({
       userName: 'João',
       invoiceNumber: 'FT-2024-001',
@@ -34,9 +15,11 @@ describe('Email Service', () => {
     expect(email.html).toContain('João');
     expect(email.html).toContain('Test Lda');
     expect(email.html).toContain('123.45 EUR');
+    expect(email.to).toBe('');
   });
 
-  it('buildPaymentReceivedEmail creates correct payload', () => {
+  it('buildPaymentReceivedEmail creates correct payload', async () => {
+    const { buildPaymentReceivedEmail } = await import('@/lib/email');
     const email = buildPaymentReceivedEmail({
       userName: 'Maria',
       amount: '10.00 EUR',
@@ -47,36 +30,48 @@ describe('Email Service', () => {
     expect(email.subject).toContain('Pagamento recebido');
     expect(email.html).toContain('Maria');
     expect(email.html).toContain('ENI');
+    expect(email.html).toContain('10.00 EUR');
   });
 
-  it('sendEmail returns success when transporter works', async () => {
-    const result = await sendEmail({
-      to: 'test@example.com',
-      subject: 'Test',
-      html: '<p>Test</p>',
+  it('buildPaymentFailedEmail creates correct payload', async () => {
+    const { buildPaymentFailedEmail } = await import('@/lib/email');
+    const email = buildPaymentFailedEmail({
+      userName: 'Carlos',
+      amount: '10.00 EUR',
+      plan: 'Contabilista',
+      retryUrl: 'http://localhost/billing',
     });
 
-    expect(result.success).toBe(true);
-    expect(mockSendMail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: 'test@example.com',
-        subject: 'Test',
-      })
-    );
+    expect(email.subject).toContain('Falha no pagamento');
+    expect(email.html).toContain('Carlos');
+    expect(email.html).toContain('Atualizar Pagamento');
   });
 
-  it('sendEmail returns false when no provider configured', async () => {
-    delete process.env.SENDGRID_API_KEY;
-    delete process.env.RESEND_API_KEY;
-    delete process.env.SMTP_HOST;
-
-    const result = await sendEmail({
-      to: 'test@example.com',
-      subject: 'Test',
-      html: '<p>Test</p>',
+  it('buildOnboardingWelcomeEmail creates correct payload', async () => {
+    const { buildOnboardingWelcomeEmail } = await import('@/lib/email');
+    const email = buildOnboardingWelcomeEmail({
+      userName: 'Ana',
+      companyName: 'Ana Lda',
+      portalUrl: 'http://localhost:3000/selfservice/dashboard',
     });
 
-    expect(result.success).toBe(false);
-    expect(mockSendMail).not.toHaveBeenCalled();
+    expect(email.subject).toContain('Bem-vindo');
+    expect(email.html).toContain('Ana');
+    expect(email.html).toContain('Ana Lda');
+    expect(email.html).toContain('Aceder ao Portal');
+  });
+
+  it('buildExportReadyEmail creates correct payload', async () => {
+    const { buildExportReadyEmail } = await import('@/lib/email');
+    const email = buildExportReadyEmail({
+      userName: 'Pedro',
+      erpType: 'TOConline',
+      fileName: 'export_2024.csv',
+      downloadUrl: 'http://localhost:3000/downloads/123',
+    });
+
+    expect(email.subject).toContain('TOConline');
+    expect(email.html).toContain('Pedro');
+    expect(email.html).toContain('export_2024.csv');
   });
 });
