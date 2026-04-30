@@ -59,7 +59,7 @@ function main() {
   try {
     // pg_dump with compression
     const cmd = `pg_dump "${DATABASE_URL}" --verbose --no-owner --no-acl --format=p | gzip > "${filepath}"`;
-    execSync(cmd, { stdio: 'inherit', shell: true });
+    execSync(cmd, { stdio: 'inherit', shell: 'powershell' });
 
     const stats = statSync(filepath);
     const sizeMB = (stats.size / 1024 / 1024).toFixed(2);

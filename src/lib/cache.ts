@@ -11,17 +11,11 @@ const redis = process.env.REDIS_URL
     })
   : null;
 
-export type CacheKey =
-  | `dashboard:kpi:${string}`
-  | `invoices:list:${string}`
-  | `company:${string}`
-  | `user:${string}`
-  | `rag:docs`
-  | `stats:${string}`;
+export type CacheKey = string;
 
 const DEFAULT_TTL = 300; // 5 minutes
 
-export async function getCache<T>(key: CacheKey): Promise<T | null> {
+export async function getCache<T>(key: CacheKey | string): Promise<T | null> {
   if (!redis) return null;
   try {
     const value = await redis.get(key);
@@ -32,7 +26,7 @@ export async function getCache<T>(key: CacheKey): Promise<T | null> {
 }
 
 export async function setCache<T>(
-  key: CacheKey,
+  key: CacheKey | string,
   value: T,
   ttlSeconds = DEFAULT_TTL
 ): Promise<void> {
@@ -66,7 +60,7 @@ export async function invalidatePattern(pattern: string): Promise<void> {
 }
 
 export async function getOrSet<T>(
-  key: CacheKey,
+  key: CacheKey | string,
   factory: () => Promise<T>,
   ttlSeconds = DEFAULT_TTL
 ): Promise<T> {

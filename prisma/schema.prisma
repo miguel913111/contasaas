@@ -91,6 +91,10 @@ model User {
   ragQueries    RagQuery[]
   auditLogs     AuditLog[]
 
+  // Stripe
+  stripeCustomerId   String? @unique
+  stripeSubscriptionId String?
+
   // PWA Push Notifications
   pushSubscription String? @db.Text
 
