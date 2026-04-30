@@ -1,0 +1,471 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  SELF_SERVICE
+}
+
+enum InvoiceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPORTED
+}
+
+enum VatRate {
+  RATE_6
+  RATE_13
+  RATE_23
+  RATE_EXEMPT
+  RATE_ZERO
+}
+
+enum WhatsAppMessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WhatsAppMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum WhatsAppTemplateType {
+  MISSING_DOCUMENT
+  REMINDER
+  CONFIRMATION
+  SERVICE_WINDOW_EXPIRED
+}
+
+enum ErpType {
+  TOCONLINE
+  PRIMAVERA_V10
+  PHC_CS
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================================
+// USER & AUTH (Dual Portal)
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          UserRole  @default(SELF_SERVICE)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Accountant: manages many companies
+  // Self-service: owns one company
+  companies     Company[] @relation("CompanyAccountant")
+  ownedCompanies Company[] @relation("CompanyOwner")
+
+  accounts      Account[]
+  sessions      Session[]
+  whatsappLogs  WhatsAppLog[]
+  exports       ErpExport[]
+  ragQueries    RagQuery[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// COMPANY (Cliente / Empresa)
+// ============================================================
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  nif           String   @unique
+  address       String?
+  postalCode    String?
+  city          String?
+  country       String   @default("PT")
+  phone         String?
+  email         String?
+  activityCode  String?  // CAE
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Dual portal relations
+  accountantId  String?
+  accountant    User?    @relation("CompanyAccountant", fields: [accountantId], references: [id])
+  ownerId       String
+  owner         User     @relation("CompanyOwner", fields: [ownerId], references: [id])
+
+  // Relations
+  suppliers     Supplier[]
+  invoices      Invoice[]
+  bankTransactions BankTransaction[]
+  whatsappLogs  WhatsAppLog[]
+  exports       ErpExport[]
+  riskScans     RiskScanAjudasCusto[]
+  auditLogs     AuditLog[]
+
+  @@map("companies")
+}
+
+// ============================================================
+// SUPPLIER (Fornecedor)
+// ============================================================
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  nif       String
+  address   String?
+  city      String?
+  country   String   @default("PT")
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  invoices  Invoice[]
+
+  @@unique([companyId, nif])
+  @@map("suppliers")
+}
+
+// ============================================================
+// INVOICE (Fatura)
+// ============================================================
+
+model Invoice {
+  id                String        @id @default(cuid())
+  documentNumber    String
+  documentType      String        @default("FC") // FC, ND, NC, FT, etc.
+  hashSignature     String        @unique // SHA-256 (NIF + Data + NrDoc + ValorTotal)
+  fileHash          String?       @unique // SHA-256 do ficheiro original (deduplicação de upload)
+  date              DateTime
+  dueDate           DateTime?
+  totalValue        Decimal       @db.Decimal(15, 2)
+  taxableBase       Decimal       @db.Decimal(15, 2)
+  vatTotal          Decimal       @db.Decimal(15, 2)
+  status            InvoiceStatus @default(PENDING)
+
+  // OCR / Extraction metadata
+  extractionMethod  String        @default("manual") // manual, pdf-parse, gemini-vision
+  extractionConfidence Decimal?   @db.Decimal(5, 2)
+  rawOcrData        Json?
+
+  // Accounting
+  suggestedAccount  String?       // Código SNC sugerido pela IA
+  accountCode       String?       // Código SNC confirmado pelo contabilista
+  deductibilityRate Decimal?      @db.Decimal(5, 2) @default(100.00) // 0-100%
+  civaArticle21Note String?       // Nota sobre restrição do Art. 21
+
+  // File storage reference
+  fileUrl           String?
+  fileName          String?
+  mimeType          String?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  companyId         String
+  company           Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  supplierId        String?
+  supplier          Supplier?     @relation(fields: [supplierId], references: [id])
+
+  supplierName      String?
+  supplierNif       String?
+
+  lines             InvoiceLine[]
+  bankMatches       BankTransaction[]
+
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id            String   @id @default(cuid())
+  description   String
+  quantity      Decimal  @db.Decimal(15, 4) @default(1)
+  unitPrice     Decimal  @db.Decimal(15, 4)
+  taxableAmount Decimal  @db.Decimal(15, 2)
+  vatAmount     Decimal  @db.Decimal(15, 2)
+  vatRate       VatRate
+  vatRateValue  Decimal  @db.Decimal(5, 2) // 6.00, 13.00, 23.00
+
+  // Split accounting
+  accountCode   String?  // Código SNC para esta linha específica
+  costCenter    String?  // Centro de custo
+
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+
+  @@map("invoice_lines")
+}
+
+// ============================================================
+// BANK TRANSACTION (CAMT.053)
+// ============================================================
+
+model BankTransaction {
+  id                String   @id @default(cuid())
+  externalId        String?  // ID do banco no XML
+  statementId       String?  // ID do extracto CAMT.053
+  bookingDate       DateTime
+  valueDate         DateTime?
+  amount            Decimal  @db.Decimal(15, 2)
+  currency          String   @default("EUR")
+  description       String?
+  counterpartyName  String?
+  counterpartyIban  String?
+  reference         String?  // Referência do pagamento
+  isReconciled      Boolean  @default(false)
+
+  // Reconciliation metadata
+  reconciliationMethod String? // exact, knapsack-subset, manual
+  differenceAmount  Decimal?   @db.Decimal(15, 2) // Diferença de cêntimos/taxas
+  differenceAccount String?    // Ex: 6284 - Despesas bancárias
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  matchedInvoices   Invoice[]
+
+  @@map("bank_transactions")
+}
+
+// ============================================================
+// WHATSAPP LOG
+// ============================================================
+
+model WhatsAppLog {
+  id                String                   @id @default(cuid())
+  phoneNumber       String
+  messageBody       String?                  @db.Text
+  mediaUrl          String?
+  mediaType         String?                  // image, document, audio
+  direction         WhatsAppMessageDirection
+  status            WhatsAppMessageStatus    @default(PENDING)
+  templateType      WhatsAppTemplateType?
+  templateName      String?
+
+  // Service window tracking (24h free-tier)
+  serviceWindowStart DateTime?
+  serviceWindowEnd   DateTime?
+  isWithinServiceWindow Boolean @default(false)
+
+  // Related entities
+  companyId         String?
+  company           Company? @relation(fields: [companyId], references: [id])
+
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id])
+
+  // Processing
+  processedAt       DateTime?
+  ocrResultId       String?  // Link to invoice if media was processed
+  errorMessage      String?
+
+  createdAt         DateTime @default(now())
+
+  @@map("whatsapp_logs")
+}
+
+// ============================================================
+// RAG TAX ADVISOR
+// ============================================================
+
+model RagDocument {
+  id          String   @id @default(cuid())
+  title       String
+  source      String   // dre.pt, snc.min-financas.pt, etc.
+  documentType String  // CIVA, CIRC, SNC, PORTARIA, PARECER
+  code        String?  // Ex: "CIVA-Art21"
+  article     String?  // Ex: "Artigo 21"
+  section     String?  // Ex: "n.º 1, alínea b)"
+  content     String   @db.Text
+  // embedding   Unsupported("vector(1536)")? // pgvector - REQUER: CREATE EXTENSION vector;
+  // TODO: Descomentar apos instalar pgvector (docker-compose ja inclui)
+  metadata    Json?
+  isRevogated Boolean  @default(false)
+  publishedAt DateTime?
+  scrapedAt   DateTime @default(now())
+
+  @@index([documentType])
+  @@index([code])
+  @@index([isRevogated])
+  @@map("rag_documents")
+}
+
+model RagQuery {
+  id            String   @id @default(cuid())
+  question      String   @db.Text
+  answer        String?  @db.Text
+  contextUsed   Json?    // Array de document IDs/artigos usados
+  confidence    Decimal? @db.Decimal(5, 2)
+  processingTimeMs Int?
+
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+
+  companyId     String?
+  createdAt     DateTime @default(now())
+
+  @@map("rag_queries")
+}
+
+// ============================================================
+// ERP EXPORTERS
+// ============================================================
+
+model ErpExport {
+  id            String       @id @default(cuid())
+  erpType       ErpType
+  status        ExportStatus @default(PENDING)
+  fileName      String?
+  fileUrl       String?
+  fileContent   String?      @db.Text // Para CSV/TXT raw
+  errorMessage  String?
+  invoiceCount  Int          @default(0)
+  totalValue    Decimal?     @db.Decimal(15, 2)
+
+  // TOConline specific
+  toconlineResponse Json?
+  toconlineDocumentIds String[]
+
+  metadata      Json?        // Configurações específicas do export
+
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id])
+
+  @@map("erp_exports")
+}
+
+// ============================================================
+// RISK SCANNER (Ajudas de Custo)
+// ============================================================
+
+model RiskScanAjudasCusto {
+  id                    String   @id @default(cuid())
+  referencePeriod       String   // "2026-Q1"
+  totalPayroll          Decimal  @db.Decimal(15, 2)
+  totalKmsDeclared      Decimal  @db.Decimal(15, 2)
+  totalAjudasCusto      Decimal  @db.Decimal(15, 2)
+  ratioAjudasPayroll    Decimal  @db.Decimal(5, 2) // Percentagem
+  kmRateApplied         Decimal  @db.Decimal(5, 2) // €/km
+  maxLegalRate          Decimal  @db.Decimal(5, 2) @default(0.40)
+  isRateCompliant       Boolean
+  isRatioAnomalous      Boolean
+  riskLevel             String   // LOW, MEDIUM, HIGH, CRITICAL
+  alertMessages         Json?    // Array de strings com alertas
+  recommendations       Json?    // Array de strings
+
+  createdAt             DateTime @default(now())
+
+  companyId             String
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("risk_scans_ajudas_custo")
+}
+
+// ============================================================
+// AUDIT LOG (quem fez o que e quando)
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String   // APPROVE_INVOICE, REJECT_INVOICE, EXPORT_ERP, CREATE_COMPANY, etc.
+  entityType  String   // Invoice, Company, Export, etc.
+  entityId    String?  // ID da entidade afetada
+  details     Json?    // Dados adicionais (valores antigos/novos, etc.)
+  ipAddress   String?
+  userAgent   String?
+
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
