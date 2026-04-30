@@ -7,6 +7,7 @@ import { getServerSession } from 'next-auth/next';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { UserRole } from '@/types';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 
 export default async function PortalLayout({
   children,
@@ -73,6 +74,7 @@ export default async function PortalLayout({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
+      <PwaInstallPrompt />
     </div>
   );
 }

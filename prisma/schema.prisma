@@ -91,6 +91,9 @@ model User {
   ragQueries    RagQuery[]
   auditLogs     AuditLog[]
 
+  // PWA Push Notifications
+  pushSubscription String? @db.Text
+
   @@map("users")
 }
 

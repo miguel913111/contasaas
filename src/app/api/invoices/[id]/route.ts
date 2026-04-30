@@ -15,6 +15,8 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { applyRateLimit } from '@/lib/rateLimit';
 import { logAudit, AuditActions } from '@/lib/auditLog';
+import { sendEmail, buildInvoiceApprovedEmail } from '@/lib/email';
+import { invalidateDashboard } from '@/lib/cache';
 
 const updateSchema = z.object({
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPORTED']).optional(),
@@ -128,7 +130,7 @@ export async function PATCH(
       include: { company: true, lines: true },
     });
 
-    // Audit log
+    // Audit log + email notification + cache invalidation
     if (data.status) {
       await logAudit({
         action: data.status === 'APPROVED' ? AuditActions.INVOICE_APPROVED : AuditActions.INVOICE_REJECTED,
@@ -138,6 +140,27 @@ export async function PATCH(
         companyId: invoice.companyId,
         details: { previousStatus: invoice.status, newStatus: data.status, documentNumber: updated.documentNumber },
       });
+
+      // Invalidate dashboard cache
+      await invalidateDashboard(invoice.companyId);
+
+      // Send email notification to company owner
+      if (data.status === 'APPROVED') {
+        const owner = await prisma.user.findUnique({
+          where: { id: invoice.company.ownerId },
+          select: { email: true, name: true },
+        });
+
+        if (owner?.email) {
+          const emailPayload = buildInvoiceApprovedEmail({
+            userName: owner.name || 'Cliente',
+            invoiceNumber: updated.documentNumber,
+            amount: `${parseFloat(updated.totalValue.toString()).toFixed(2)} EUR`,
+            companyName: updated.company.name,
+          });
+          await sendEmail({ ...emailPayload, to: owner.email });
+        }
+      }
     }
 
     return NextResponse.json({
