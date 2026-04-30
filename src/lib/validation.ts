@@ -64,10 +64,10 @@ export type ExportInput = z.infer<typeof exportSchema>;
 export const bankReconciliationSchema = z.object({
   file: z.instanceof(File, { message: 'Ficheiro obrigatorio' })
     .refine(f => f.size > 0, { message: 'Ficheiro vazio' })
-    .refine(f => f.size <= 5 * 1024 * 1024, { message: 'Ficheiro deve ter no maximo 5MB' })
+    .refine(f => f.size <= 10 * 1024 * 1024, { message: 'Ficheiro deve ter no maximo 10MB' })
     .refine(
-      f => ['text/xml', 'application/xml'].includes(f.type) || f.name.toLowerCase().endsWith('.xml'),
-      { message: 'Formato invalido. Aceita apenas XML (CAMT.053)' }
+      f => ['text/xml', 'application/xml', 'application/pdf'].includes(f.type) || f.name.toLowerCase().endsWith('.xml') || f.name.toLowerCase().endsWith('.pdf'),
+      { message: 'Formato invalido. Aceita XML (CAMT.053) ou PDF de extrato bancario' }
     ),
   companyId: z.string().min(1, { message: 'companyId obrigatorio' }),
 });

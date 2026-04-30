@@ -17,7 +17,7 @@ export default async function BankPage() {
       <h2 className="text-2xl font-bold text-gray-900">Reconciliacao Bancaria</h2>
       
       <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Importar Extrato CAMT.053</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Importar Extrato Bancario</h3>
         <form action="/api/bank-reconciliation" method="POST" encType="multipart/form-data" className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Empresa *</label>
@@ -36,16 +36,16 @@ export default async function BankPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Ficheiro XML (CAMT.053) *</label>
+            <label className="block text-sm font-medium text-gray-700">Ficheiro de Extrato *</label>
             <input
               type="file"
               name="file"
-              accept=".xml"
+              accept=".xml,.pdf"
               required
               className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Max 5MB. Formato: XML (ISO 20022 CAMT.053)
+              Max 10MB. Formatos: XML (CAMT.053) ou PDF de extrato bancario
             </p>
           </div>
 
@@ -60,8 +60,8 @@ export default async function BankPage() {
 
       <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
         <p className="text-sm text-blue-700">
-          <strong>Como funciona:</strong> Exporte o extrato do seu homebanking no formato CAMT.053 (ISO 20022).
-          O sistema ira automaticamente casar pagamentos com faturas pendentes usando algoritmo de subset sum.
+          <strong>Como funciona:</strong> Exporte o extrato do seu homebanking em XML (CAMT.053 ISO 20022) ou PDF.
+          O sistema ira automaticamente casar pagamentos com faturas pendentes.
         </p>
       </div>
     </div>

@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { parseCamt053, reconcileTransactions, saveReconciliationResults } from '@/modules/bank_reconciliation/camt053Parser';
+import { parsePdfStatement } from '@/modules/bank_reconciliation/pdfStatementParser';
 import { prisma } from '@/lib/prisma';
 import { bankReconciliationSchema, validateOrThrow, ValidationError } from '@/lib/validation';
 import { applyRateLimit } from '@/lib/rateLimit';
@@ -62,20 +63,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sem permissao' }, { status: 403 });
     }
 
-    // 5. Le XML
+    // 5. Processa ficheiro (XML ou PDF)
     const bytes = await file.arrayBuffer();
-    const xmlContent = Buffer.from(bytes).toString('utf-8');
+    const buffer = Buffer.from(bytes);
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
-    // 6. Parse CAMT.053
-    const parsed = parseCamt053(xmlContent);
+    let parsed: { statementId: string; accountIban: string; openingBalance: number; closingBalance: number; transactions: any[] };
 
-    // 7. Reconcilia
+    if (isPdf) {
+      // Extrai transacoes do PDF
+      const pdfResult = await parsePdfStatement(buffer);
+      parsed = {
+        statementId: pdfResult.statementId,
+        accountIban: pdfResult.accountIban,
+        openingBalance: pdfResult.openingBalance,
+        closingBalance: pdfResult.closingBalance,
+        transactions: pdfResult.transactions.map((t) => ({
+          externalId: t.reference || `${t.date}-${t.amount}`,
+          bookingDate: new Date(t.date),
+          amount: t.amount,
+          description: t.description,
+          counterpartyName: t.counterparty || '',
+          reference: t.reference || '',
+        })),
+      };
+    } else {
+      // Parse XML CAMT.053
+      const xmlContent = buffer.toString('utf-8');
+      parsed = parseCamt053(xmlContent);
+    }
+
+    // 6. Reconcilia
     const results = await reconcileTransactions(companyId, parsed.transactions, parsed.statementId);
 
-    // 8. Guarda resultados
+    // 7. Guarda resultados
     await saveReconciliationResults(companyId, parsed.statementId, results);
 
-    // 9. Resumo
+    // 8. Resumo
     const summary = {
       statementId: parsed.statementId,
       accountIban: parsed.accountIban,

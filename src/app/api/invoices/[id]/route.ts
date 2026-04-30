@@ -20,11 +20,11 @@ import { invalidateDashboard } from '@/lib/cache';
 
 const updateSchema = z.object({
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXPORTED']).optional(),
-  accountCode: z.string().min(1).max(20).optional(),
+  accountCode: z.string().max(20).optional().or(z.literal('')),
   documentNumber: z.string().min(1).max(100).optional(),
-  supplierName: z.string().max(200).optional(),
-  supplierNif: z.string().regex(/^\d{9}$/).optional(),
-  notes: z.string().max(1000).optional(),
+  supplierName: z.string().max(200).optional().or(z.literal('')),
+  supplierNif: z.string().regex(/^\d{9}$/).optional().or(z.literal('')),
+  notes: z.string().max(1000).optional().or(z.literal('')),
 });
 
 async function getInvoiceWithAccess(invoiceId: string, userId: string, userRole: string) {
