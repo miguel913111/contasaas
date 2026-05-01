@@ -19,7 +19,6 @@ import { processRagQuery } from '@/modules/rag_tax_advisor/ragEngine';
 import { prisma } from '@/lib/prisma';
 import { ragChatSchema, validateOrThrow, ValidationError, ocrSchema } from '@/lib/validation';
 import { applyRateLimit } from '@/lib/rateLimit';
-import { saveInvoiceFile } from '@/lib/fileStorage';
 import { extractTextFromImage } from '@/modules/ocr_extraction/ocrEngine';
 
 export async function POST(request: NextRequest) {
@@ -62,12 +61,8 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          // Extrair texto do ficheiro usando OCR
-          const tempCompanyId = 'rag-temp-' + Date.now();
-          const tempInvoiceId = 'rag-' + Date.now();
-          const savedPath = await saveInvoiceFile(tempCompanyId, tempInvoiceId, buffer, file.name || 'document.pdf');
-          
-          fileText = await extractTextFromImage(savedPath, file.type);
+          // Extrair texto do ficheiro usando OCR (directamente do buffer)
+          fileText = await extractTextFromImage(buffer, file.type);
         } catch (err) {
           console.warn('[RAG] Falha ao extrair texto do ficheiro:', err);
           fileText = '[Nao foi possivel extrair texto do documento]';

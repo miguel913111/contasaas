@@ -430,20 +430,21 @@ export async function checkDuplicateSignature(
 /**
  * Extrai texto puro de uma imagem ou PDF para uso no RAG chat.
  * Usa Gemini Vision como fallback universal.
+ * 
+ * @param fileBuffer - Buffer do ficheiro (em memoria ou do R2)
+ * @param mimeType - MIME type do ficheiro
  */
 export async function extractTextFromImage(
-  filePath: string,
+  fileBuffer: Buffer,
   mimeType: string
 ): Promise<string> {
-  const fs = await import('fs');
   const startTime = Date.now();
 
   try {
     // Para PDFs, tentamos pdf-parse primeiro
     if (mimeType === 'application/pdf') {
       try {
-        const buffer = fs.readFileSync(filePath);
-        const pdfData = await pdfParse(buffer);
+        const pdfData = await pdfParse(fileBuffer);
         if (pdfData.text && pdfData.text.trim().length > 50) {
           console.log(`[OCR/RAG] PDF texto extraido via pdf-parse: ${pdfData.text.length} chars`);
           return pdfData.text.trim().substring(0, 8000);
@@ -454,8 +455,7 @@ export async function extractTextFromImage(
     }
 
     // Para imagens e PDFs que falharam no pdf-parse, usa Gemini Vision
-    const buffer = fs.readFileSync(filePath);
-    const base64Data = buffer.toString('base64');
+    const base64Data = fileBuffer.toString('base64');
 
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const result = await model.generateContent({

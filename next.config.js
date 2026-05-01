@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['prisma', '@prisma/client', 'pdf-parse'],
+    serverComponentsExternalPackages: ['prisma', '@prisma/client', 'pdf-parse', '@aws-sdk/client-s3'],
   },
   images: {
     domains: ['localhost'],

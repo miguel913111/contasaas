@@ -78,8 +78,8 @@ describe('Zod Validation — Bank Reconciliation Schema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejeita ficheiro >5MB', () => {
-    const bigFile = new File([new ArrayBuffer(6 * 1024 * 1024)], 'big.xml', { type: 'application/xml' });
+  it('rejeita ficheiro >10MB', () => {
+    const bigFile = new File([new ArrayBuffer(11 * 1024 * 1024)], 'big.xml', { type: 'application/xml' });
     const result = bankReconciliationSchema.safeParse({ file: bigFile, companyId: 'abc' });
     expect(result.success).toBe(false);
   });
