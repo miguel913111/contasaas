@@ -9,7 +9,14 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const secret = process.env.NEXTAUTH_SECRET;
+
+  // Se nao ha NEXTAUTH_SECRET, permite o request sem autenticacao (dev/fallback)
+  if (!secret) {
+    return NextResponse.next();
+  }
+
+  const token = await getToken({ req: request, secret });
   const { pathname } = request.nextUrl;
 
   // Rotas publicas
