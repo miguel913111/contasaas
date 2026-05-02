@@ -14,9 +14,6 @@ RUN npm run build
 
 RUN mkdir -p uploads
 
-EXPOSE 3000
-
-ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=production
 
