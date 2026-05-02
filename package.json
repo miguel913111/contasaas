@@ -6,7 +6,7 @@
     "dev": "next dev",
     "dev:https": "powershell -ExecutionPolicy Bypass -File scripts/dev-https.ps1",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p ${PORT:-8080}",
+    "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

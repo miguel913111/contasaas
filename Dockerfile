@@ -15,6 +15,7 @@ RUN npm run build
 RUN mkdir -p uploads
 
 ENV HOSTNAME="0.0.0.0"
+ENV PORT=8080
 ENV NODE_ENV=production
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "next start -H 0.0.0.0 -p 8080"]
