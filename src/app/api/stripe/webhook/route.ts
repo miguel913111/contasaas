@@ -1,113 +1,65 @@
-/**
- * API Route: Stripe Webhook
- * POST /api/stripe/webhook
- * 
- * Processa eventos do Stripe:
- * - checkout.session.completed → ativa subscricao + envia email
- * - invoice.payment_failed → notifica user por email
- * - customer.subscription.deleted → cancela subscricao
- */
+﻿import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
+import { prisma } from "@/lib/prisma";
 
-import { NextRequest, NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
-import { prisma } from '@/lib/prisma';
-import { sendEmail, buildPaymentReceivedEmail, buildPaymentFailedEmail } from '@/lib/email';
+// Lazy initialization - nao crasha durante o build
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error("STRIPE_SECRET_KEY nao configurada");
+  }
+  return new Stripe(key, { apiVersion: "2024-12-18.acacia" as any });
+}
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const payload = await request.text();
-    const signature = request.headers.get('stripe-signature') || '';
+    const stripe = getStripe();
+    const payload = await req.text();
+    const signature = req.headers.get("stripe-signature") || "";
+
+    if (!webhookSecret) {
+      return NextResponse.json({ error: "Webhook secret nao configurado" }, { status: 500 });
+    }
 
     let event;
     try {
       event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
     } catch (err: any) {
-      console.error('[Stripe Webhook] Assinatura invalida:', err.message);
-      return NextResponse.json({ error: 'Assinatura invalida' }, { status: 400 });
+      return NextResponse.json({ error: `Webhook signature invalida: ${err.message}` }, { status: 400 });
     }
 
-    console.log(`[Stripe Webhook] Evento recebido: ${event.type}`);
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as any;
+      const customerId = session.customer as string;
+      const subscriptionId = session.subscription as string;
+      const userId = session.metadata?.userId;
 
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as any;
-        const userId = session.metadata?.userId;
-        const plan = session.metadata?.plan;
-
-        console.log('[Stripe] Checkout completado:', session.id, 'User:', userId, 'Plan:', plan);
-
-        if (userId) {
-          // Update user subscription
-          await prisma.user.update({
-            where: { id: userId },
-            data: {
-              role: plan === 'contabilista' ? 'ACCOUNTANT' : 'SELF_SERVICE',
-            },
-          });
-
-          // Send welcome email
-          const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { email: true, name: true },
-          });
-
-          if (user?.email) {
-            const email = buildPaymentReceivedEmail({
-              userName: user.name || 'Cliente',
-              amount: `${(session.amount_total / 100).toFixed(2)} EUR`,
-              plan: plan === 'contabilista' ? 'Contabilista' : 'ENI',
-              nextBilling: 'Mensal',
-            });
-            await sendEmail({ ...email, to: user.email });
-          }
-        }
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as any;
-        const customerId = invoice.customer;
-
-        console.log('[Stripe] Pagamento falhou:', invoice.id);
-
-        // Find user by Stripe customer ID
-        const user = await prisma.user.findFirst({
-          where: { stripeCustomerId: customerId },
-          select: { email: true, name: true, id: true },
+      if (userId) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            stripeCustomerId: customerId,
+            stripeSubscriptionId: subscriptionId,
+            subscriptionStatus: "ACTIVE",
+          },
         });
-
-        if (user?.email) {
-          const email = buildPaymentFailedEmail({
-            userName: user.name || 'Cliente',
-            amount: `${(invoice.amount_due / 100).toFixed(2)} EUR`,
-            plan: 'ContaSaaS',
-            retryUrl: `${process.env.APP_URL}/billing`,
-          });
-          await sendEmail({ ...email, to: user.email });
-        }
-        break;
       }
+    }
 
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as any;
-        const customerId = subscription.customer;
-
-        console.log('[Stripe] Subscricao cancelada:', subscription.id);
-
-        await prisma.user.updateMany({
-          where: { stripeCustomerId: customerId },
-          data: { role: 'SELF_SERVICE' },
-        });
-        break;
-      }
+    if (event.type === "invoice.payment_failed") {
+      const session = event.data.object as any;
+      const customerId = session.customer as string;
+      await prisma.user.updateMany({
+        where: { stripeCustomerId: customerId },
+        data: { subscriptionStatus: "PAST_DUE" },
+      });
     }
 
     return NextResponse.json({ received: true });
-
-  } catch (error) {
-    console.error('[API/Stripe/Webhook] Erro:', error);
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+  } catch (error: any) {
+    console.error("Stripe webhook error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
