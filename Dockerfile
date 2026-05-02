@@ -20,4 +20,4 @@ ENV PORT="8080"
 
 EXPOSE 8080
 
-CMD ["node", "node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "-c", "next start --hostname 0.0.0.0 --port ${PORT:-8080}"]
